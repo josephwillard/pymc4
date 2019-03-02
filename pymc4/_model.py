@@ -1,26 +1,46 @@
 import copy
-from . import _template_contexts as contexts
+import ast
+import inspect
 
 import tensorflow as tf
 
+from . import _template_contexts as contexts
+from .random_variables.random_variable import AutoNameTransformer
+from .ast_compiler import uncompile, parse_snippet, recompile
 
 __all__ = ["model"]
 
 
-def model(func):
+def model(auto_name=False):
     """
     Decorate a model-specification function as a PyMC4 model.
 
     Parameters
     ----------
-    func : a function
-        The function that specifies the PyMC4 model
+    auto_name : bool
+        Whether to automatically infer names of RVs.
 
     Returns
     -------
     The function wrapped in a ModelTemplate object.
     """
-    return ModelTemplate(func)
+    def wrap(func):
+        if auto_name:
+            # uncompile function
+            unc = uncompile(func.__code__)
+
+            # convert to ast and apply visitor
+            tree = parse_snippet(*unc)
+            AutoNameTransformer().visit(tree)
+            ast.fix_missing_locations(tree)
+            unc[0] = tree
+
+            # recompile and patch function's code
+            func.__code__ = recompile(*unc)
+
+        return ModelTemplate(func)
+
+    return wrap
 
 
 class ModelTemplate:

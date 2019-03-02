@@ -12,7 +12,7 @@ from .. import _template_contexts as contexts
 from tensorflow_probability import distributions as tfd
 from tensorflow_probability import bijectors  # import Bijector
 from typing import NewType, Union, Sequence
-
+import ast
 
 class WithBackendArithmetic:
     """Helper class to implement the backend arithmetic necessary for the RandomVariable class."""
@@ -111,12 +111,14 @@ class RandomVariable(WithBackendArithmetic):
 
     _base_dist = None
 
-    def __init__(self, name: str, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         self._parents = []
-        self._distribution = self._base_dist(name=name, *args, **kwargs)
+        self._distribution = self._base_dist(*args, **kwargs)
         self._sample_shape = ()
         self._dim_names = ()
-        self.name = name
+        self.name = kwargs.get('name', None)
+        if self.name is None:
+            raise ValueError('No name provided for RandomVariable.')
         ctx = contexts.get_context()
         self._creation_context_id = id(ctx)
         self._backend_tensor = None
@@ -204,6 +206,17 @@ class UnitContinuousRV(ContinuousRV):
             self._transformed_distribution = tfd.TransformedDistribution(
                 distribution=self._distribution, bijector=bijectors.Invert(bijectors.Sigmoid())
             )
+
+class AutoNameTransformer(ast.NodeTransformer):
+    def visit_Assign(self, tree_node):
+        rv_name = tree_node.targets[0].id
+        # Test if name keyword is already set
+        if any(kwarg.arg == 'name' for kwarg in tree_node.value.keywords):
+            return tree_node
+        else:
+            tree_node.value.keywords.append(ast.keyword('name', ast.Str(rv_name)))
+
+        return tree_node
 
 TensorLike = NewType("TensorLike", Union[Sequence[int], Sequence[float], int, float])
 IntTensorLike = NewType("IntTensorLike", Union[int, Sequence[int]])
